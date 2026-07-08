@@ -29,9 +29,22 @@
 		7F4D2F862FFE08270070E90D /* Audio2ScoreUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Audio2ScoreUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		7F4D2FA22FFEB8FC0070E90D /* Exceptions for "Audio2Score" folder in "Audio2ScoreTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				transcription.example.json,
+			);
+			target = 7F4D2F7B2FFE08270070E90D /* Audio2ScoreTests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7F4D2F712FFE08260070E90D /* Audio2Score */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7F4D2FA22FFEB8FC0070E90D /* Exceptions for "Audio2Score" folder in "Audio2ScoreTests" target */,
+			);
 			path = Audio2Score;
 			sourceTree = "<group>";
 		};
