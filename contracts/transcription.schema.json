@@ -31,11 +31,11 @@
     "note_events": {
       "type": "array",
       "items": {
-        "$ref": "#/$definitions/note_event"
+        "$ref": "#/definitions/note_event"
       }
     }
   },
-  "$definitions": {
+  "definitions": {
     "note_event": {
       "type": "object",
       "additionalProperties": false,
