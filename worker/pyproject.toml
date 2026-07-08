@@ -1,0 +1,33 @@
+[project]
+name = "worker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "John", email = "johnrichardmolina@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.139.0",
+    "pydantic>=2.13.4",
+    "python-multipart>=0.0.32",
+    "unicorn[standard]>=2.1.4",
+    "uvicorn[standard]>=0.50.2",
+]
+
+[project.scripts]
+worker = "worker:main"
+
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
