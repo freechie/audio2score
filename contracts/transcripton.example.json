@@ -1,0 +1,16 @@
+{
+  "engine": "dsp_v0",
+  "engine_version": "0.1.0",
+  "tempo_bpm": 120,
+  "key_guess": "C major",
+  "note_events": [
+    {
+      "pitch_midi": 60,
+      "onset_seconds": 0.0,
+      "duration_seconds": 0.5,
+      "velocity": 0.8,
+      "confidence": 1.0,
+      "staff_hint": "treble"
+    }
+  ]
+}
