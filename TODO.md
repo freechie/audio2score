@@ -1,19 +1,10 @@
 # Audio2Score TODO
 
-## Now
-
-- [ ] Define transcription JSON contract
-- [ ] Build FastAPI /health endpoint
-- [ ] Return hardcoded C-major note events
-- [ ] Add worker tests
+The active plan and acceptance criteria live in the
+[README roadmap](README.md#roadmap).
 
 ## Next
 
-- [ ] Create iOS SwiftUI app
-- [ ] Decode transcription JSON in Swift
-- [ ] Render notes on a simple staff
-
-## Later
-
-- [ ] Upload audio file
-- [ ] Add MusicXML export
+- [ ] Complete Phase 1: request written permission, create the evaluation
+  fixtures, benchmark candidate engines, and record the publishable engine
+  decision.
