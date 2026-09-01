@@ -187,6 +187,17 @@ cd worker
 uv run pytest -q
 ```
 
+Run the complete repository verification on macOS with Xcode installed:
+
+```bash
+./scripts/verify
+```
+
+This checks the locked Python environment, worker tests, dependency advisories,
+and static analysis, then compiles the iOS app and test bundles without code
+signing. Running the iOS tests still requires an installed simulator runtime or
+a configured development profile.
+
 The current endpoints are:
 
 - `GET /health`

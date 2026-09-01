@@ -1,10 +1,10 @@
 [project]
 name = "worker"
 version = "0.1.0"
-description = "Add your description here"
+description = "Demo FastAPI transcription worker for Audio2Score"
 readme = "README.md"
 authors = [
-    { name = "John", email = "johnrichardmolina@gmail.com" }
+    { name = "John", email = "4448701+freechie@users.noreply.github.com" }
 ]
 requires-python = ">=3.13"
 dependencies = [
@@ -18,7 +18,7 @@ dependencies = [
 worker = "worker:main"
 
 [build-system]
-requires = ["uv_build>=0.9.21,<0.10.0"]
+requires = ["uv_build>=0.9.21,<0.12.0"]
 build-backend = "uv_build"
 
 [dependency-groups]

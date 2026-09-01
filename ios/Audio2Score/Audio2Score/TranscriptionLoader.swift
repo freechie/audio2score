@@ -9,7 +9,7 @@ import Foundation
 
 enum TranscriptionLoader {
     static func loadDemo(from bundle: Bundle = .main) throws -> TranscriptionResult {
-        guard let url = Bundle.main.url(
+        guard let url = bundle.url(
             forResource: "transcription.example",
             withExtension: "json"
         ) else {
