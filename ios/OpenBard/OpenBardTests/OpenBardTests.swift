@@ -321,6 +321,38 @@ struct OpenBardTests {
         #expect(PianoRollEdit.isRightEdgeHit(frame: frame, point: CGPoint(x: 135, y: 20)))
         #expect(!PianoRollEdit.isRightEdgeHit(frame: frame, point: CGPoint(x: 60, y: 20)))
     }
+
+    @Test func pianoRollEditKeepsBodyHitOnNarrowNotes() {
+        let thirtySix = CGRect(x: 0, y: 0, width: 36, height: 16)
+        #expect(PianoRollEdit.edgeHit(frame: thirtySix, point: CGPoint(x: 18, y: 8)) == .body)
+
+        let oneBeat = CGRect(x: 0, y: 0, width: 20.8125, height: 16)
+        #expect(PianoRollEdit.edgeHit(frame: oneBeat, point: CGPoint(x: 10.40625, y: 8)) == .body)
+
+        let drawnSixteenth = CGRect(x: 0, y: 0, width: 5.203125, height: 16)
+        #expect(PianoRollEdit.edgeHit(frame: drawnSixteenth, point: CGPoint(x: 2.6015625, y: 8)) == .body)
+
+        let minFrame = CGRect(x: 0, y: 0, width: 4, height: 16)
+        #expect(PianoRollEdit.edgeHit(frame: minFrame, point: CGPoint(x: 2, y: 8)) == .body)
+    }
+
+    @Test func pianoRollEditKeepsEighteenPointEdgesOnWideNotes() {
+        let frame = CGRect(x: 40, y: 10, width: 100, height: 20)
+        #expect(PianoRollEdit.edgeHit(frame: frame, point: CGPoint(x: 57, y: 20)) == .left)
+        #expect(PianoRollEdit.edgeHit(frame: frame, point: CGPoint(x: 58, y: 20)) == .body)
+        #expect(PianoRollEdit.edgeHit(frame: frame, point: CGPoint(x: 121, y: 20)) == .body)
+        #expect(PianoRollEdit.edgeHit(frame: frame, point: CGPoint(x: 122, y: 20)) == .right)
+    }
+
+    @Test func pianoRollEditKeepsBodyHitOnEighteenPointOverviewHotspot() {
+        let hotspot = CGRect(x: 0, y: 0, width: 18, height: 32)
+        #expect(PianoRollEdit.edgeHit(frame: hotspot, point: CGPoint(x: 9, y: 16), edgeWidth: 14) == .body)
+        #expect(PianoRollEdit.edgeHit(frame: hotspot, point: CGPoint(x: 0, y: 16), edgeWidth: 14) == .left)
+        #expect(PianoRollEdit.edgeHit(frame: hotspot, point: CGPoint(x: 17.9, y: 16), edgeWidth: 14) == .right)
+        #expect(PianoRollEdit.edgeHit(localX: 9, width: 18, edgeWidth: 14) == .body)
+        #expect(PianoRollEdit.edgeHit(localX: 0, width: 18, edgeWidth: 14) == .left)
+        #expect(PianoRollEdit.edgeHit(localX: 17.9, width: 18, edgeWidth: 14) == .right)
+    }
     
     @Test func findsMergeCandidate() {
         let notes = [
