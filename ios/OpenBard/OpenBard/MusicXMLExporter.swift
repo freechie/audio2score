@@ -48,6 +48,12 @@ enum MusicXMLExporter {
 
     // MARK: - Measure emission
 
+    private struct ChordGroup {
+        var startBeat: Double
+        var durationBeats: Double
+        var notes: [ScoreNote]
+    }
+
     private static func emitMeasure(
         _ measure: ScoreMeasure,
         score: Score,
@@ -88,16 +94,22 @@ enum MusicXMLExporter {
             xml += "      </direction>\n"
         }
 
-        var lastNoteStart: Double?
-        for item in measure.items {
-            switch item {
-            case .note(let note):
-                let isChord = lastNoteStart.map { abs($0 - note.startBeat) < 1e-9 } ?? false
-                xml += emitNote(note, isChord: isChord, tieStops: tieStops)
-                lastNoteStart = note.startBeat
-            case .rest(let rest):
-                xml += emitRest(rest)
-                lastNoteStart = nil
+        let origin = Double(measure.index) * ScoreBuilder.beatsPerMeasure
+        let voices = assignVoices(chordGroups(in: measure))
+        if voices.isEmpty {
+            xml += emitSpelledRest(durationBeats: ScoreBuilder.beatsPerMeasure, voice: 1)
+        } else {
+            let measureDivisions = Int(ScoreBuilder.beatsPerMeasure * Double(divisionsPerQuarter))
+            for (voiceIndex, groups) in voices.enumerated() {
+                if voiceIndex > 0 {
+                    xml += emitBackup(divisions: measureDivisions)
+                }
+                xml += emitVoice(
+                    groups,
+                    origin: origin,
+                    voice: voiceIndex + 1,
+                    tieStops: tieStops
+                )
             }
         }
 
@@ -105,13 +117,121 @@ enum MusicXMLExporter {
         return xml
     }
 
-    private static func emitNote(_ note: ScoreNote, isChord: Bool, tieStops: Set<String>) -> String {
-        let duration = max(1, Int((note.durationBeats * Double(divisionsPerQuarter)).rounded()))
-        let pitch = midiToPitch(note.pitchMidi)
-        let type = noteType(for: note.durationBeats)
-        let stopKey = "\(note.pitchMidi)@\(formatBeat(note.startBeat))"
-        let needsStop = tieStops.contains(stopKey)
+    private static func chordGroups(in measure: ScoreMeasure) -> [ChordGroup] {
+        let notes = measure.items.compactMap { item -> ScoreNote? in
+            if case .note(let note) = item { return note }
+            return nil
+        }
+        .sorted { lhs, rhs in
+            if abs(lhs.startBeat - rhs.startBeat) > 1e-9 {
+                return lhs.startBeat < rhs.startBeat
+            }
+            if abs(lhs.durationBeats - rhs.durationBeats) > 1e-9 {
+                return lhs.durationBeats > rhs.durationBeats
+            }
+            return lhs.pitchMidi < rhs.pitchMidi
+        }
 
+        var groups: [ChordGroup] = []
+        for note in notes {
+            if var last = groups.last,
+               abs(last.startBeat - note.startBeat) < 1e-9,
+               abs(last.durationBeats - note.durationBeats) < 1e-9 {
+                last.notes.append(note)
+                groups[groups.count - 1] = last
+            } else {
+                groups.append(
+                    ChordGroup(
+                        startBeat: note.startBeat,
+                        durationBeats: note.durationBeats,
+                        notes: [note]
+                    )
+                )
+            }
+        }
+        return groups
+    }
+
+    private static func assignVoices(_ groups: [ChordGroup]) -> [[ChordGroup]] {
+        var voices: [[ChordGroup]] = []
+        var ends: [Double] = []
+        for group in groups {
+            var assigned: Int?
+            for index in 0..<ends.count {
+                if group.startBeat >= ends[index] - 1e-9 {
+                    assigned = index
+                    break
+                }
+            }
+            if let assigned {
+                voices[assigned].append(group)
+                ends[assigned] = group.startBeat + group.durationBeats
+            } else {
+                voices.append([group])
+                ends.append(group.startBeat + group.durationBeats)
+            }
+        }
+        return voices
+    }
+
+    private static func emitVoice(
+        _ groups: [ChordGroup],
+        origin: Double,
+        voice: Int,
+        tieStops: Set<String>
+    ) -> String {
+        var xml = ""
+        var cursor = origin
+        let barEnd = origin + ScoreBuilder.beatsPerMeasure
+        for group in groups {
+            if group.startBeat > cursor + 1e-9 {
+                xml += emitSpelledRest(durationBeats: group.startBeat - cursor, voice: voice)
+            }
+            xml += emitSpelledChord(group, voice: voice, tieStops: tieStops)
+            cursor = max(cursor, group.startBeat + group.durationBeats)
+        }
+        if barEnd > cursor + 1e-9 {
+            xml += emitSpelledRest(durationBeats: barEnd - cursor, voice: voice)
+        }
+        return xml
+    }
+
+    private static func emitSpelledChord(
+        _ group: ChordGroup,
+        voice: Int,
+        tieStops: Set<String>
+    ) -> String {
+        let pieces = DurationSpelling.pieces(forBeats: group.durationBeats)
+        var xml = ""
+        for (pieceIndex, piece) in pieces.enumerated() {
+            let isFirstPiece = pieceIndex == 0
+            let isLastPiece = pieceIndex == pieces.count - 1
+            for (noteIndex, note) in group.notes.enumerated() {
+                let stopKey = "\(note.pitchMidi)@\(formatBeat(note.startBeat))"
+                let tieStop = (!isFirstPiece) || tieStops.contains(stopKey)
+                let tieStart = (!isLastPiece) || note.tiedToNext
+                xml += emitNote(
+                    note,
+                    isChord: noteIndex > 0,
+                    voice: voice,
+                    piece: piece,
+                    tieStop: tieStop,
+                    tieStart: tieStart
+                )
+            }
+        }
+        return xml
+    }
+
+    private static func emitNote(
+        _ note: ScoreNote,
+        isChord: Bool,
+        voice: Int,
+        piece: DurationSpelling.Piece,
+        tieStop: Bool,
+        tieStart: Bool
+    ) -> String {
+        let pitch = midiToPitch(note.pitchMidi)
         var xml = "      <note>\n"
         if isChord {
             xml += "        <chord/>\n"
@@ -123,21 +243,24 @@ enum MusicXMLExporter {
         }
         xml += "          <octave>\(pitch.octave)</octave>\n"
         xml += "        </pitch>\n"
-        xml += "        <duration>\(duration)</duration>\n"
-        if needsStop {
+        xml += "        <duration>\(piece.divisions)</duration>\n"
+        if tieStop {
             xml += "        <tie type=\"stop\"/>\n"
         }
-        if note.tiedToNext {
+        if tieStart {
             xml += "        <tie type=\"start\"/>\n"
         }
-        xml += "        <voice>1</voice>\n"
-        xml += "        <type>\(type)</type>\n"
-        if needsStop || note.tiedToNext {
+        xml += "        <voice>\(voice)</voice>\n"
+        xml += "        <type>\(piece.type)</type>\n"
+        for _ in 0..<piece.dots {
+            xml += "        <dot/>\n"
+        }
+        if tieStop || tieStart {
             xml += "        <notations>\n"
-            if needsStop {
+            if tieStop {
                 xml += "          <tied type=\"stop\"/>\n"
             }
-            if note.tiedToNext {
+            if tieStart {
                 xml += "          <tied type=\"start\"/>\n"
             }
             xml += "        </notations>\n"
@@ -146,16 +269,124 @@ enum MusicXMLExporter {
         return xml
     }
 
-    private static func emitRest(_ rest: ScoreRest) -> String {
-        let duration = max(1, Int((rest.durationBeats * Double(divisionsPerQuarter)).rounded()))
-        let type = noteType(for: rest.durationBeats)
+    private static func emitSpelledRest(durationBeats: Double, voice: Int) -> String {
+        DurationSpelling.pieces(forBeats: durationBeats).map { piece in
+            emitRest(piece: piece, voice: voice)
+        }.joined()
+    }
+
+    private static func emitRest(piece: DurationSpelling.Piece, voice: Int) -> String {
         var xml = "      <note>\n"
         xml += "        <rest/>\n"
-        xml += "        <duration>\(duration)</duration>\n"
-        xml += "        <voice>1</voice>\n"
-        xml += "        <type>\(type)</type>\n"
+        xml += "        <duration>\(piece.divisions)</duration>\n"
+        xml += "        <voice>\(voice)</voice>\n"
+        xml += "        <type>\(piece.type)</type>\n"
+        for _ in 0..<piece.dots {
+            xml += "        <dot/>\n"
+        }
         xml += "      </note>\n"
         return xml
+    }
+
+    private static func emitBackup(divisions: Int) -> String {
+        var xml = "      <backup>\n"
+        xml += "        <duration>\(divisions)</duration>\n"
+        xml += "      </backup>\n"
+        return xml
+    }
+
+    private enum DurationSpelling {
+        struct Piece: Equatable {
+            var type: String
+            var dots: Int
+            var divisions: Int
+        }
+
+        private enum Glyph {
+            case whole
+            case half
+            case quarter
+            case eighth
+            case sixteenth
+
+            var typeName: String {
+                switch self {
+                case .whole:
+                    return "whole"
+                case .half:
+                    return "half"
+                case .quarter:
+                    return "quarter"
+                case .eighth:
+                    return "eighth"
+                case .sixteenth:
+                    return "16th"
+                }
+            }
+
+            var undottedDivisions: Int {
+                switch self {
+                case .whole:
+                    return 16
+                case .half:
+                    return 8
+                case .quarter:
+                    return 4
+                case .eighth:
+                    return 2
+                case .sixteenth:
+                    return 1
+                }
+            }
+        }
+
+        private static let shapes: [[(glyph: Glyph, dots: Int)]] = [
+            [],
+            [(.sixteenth, 0)],
+            [(.eighth, 0)],
+            [(.eighth, 1)],
+            [(.quarter, 0)],
+            [(.quarter, 0), (.sixteenth, 0)],
+            [(.quarter, 1)],
+            [(.quarter, 1), (.sixteenth, 0)],
+            [(.half, 0)],
+            [(.half, 0), (.sixteenth, 0)],
+            [(.half, 0), (.eighth, 0)],
+            [(.half, 0), (.eighth, 1)],
+            [(.half, 1)],
+            [(.half, 1), (.sixteenth, 0)],
+            [(.half, 1), (.eighth, 0)],
+            [(.half, 1), (.eighth, 1)],
+            [(.whole, 0)],
+        ]
+
+        static func pieces(forBeats beats: Double) -> [Piece] {
+            let divisions = max(1, Int((beats * Double(divisionsPerQuarter)).rounded()))
+            return pieces(divisions: min(divisions, 16))
+        }
+
+        static func pieces(divisions: Int) -> [Piece] {
+            shapes[divisions].map { shape in
+                Piece(
+                    type: shape.glyph.typeName,
+                    dots: shape.dots,
+                    divisions: countedDivisions(glyph: shape.glyph, dots: shape.dots)
+                )
+            }
+        }
+
+        private static func countedDivisions(glyph: Glyph, dots: Int) -> Int {
+            let base = glyph.undottedDivisions
+            var value = base
+            var add = base / 2
+            var remaining = dots
+            while remaining > 0 {
+                value += add
+                add /= 2
+                remaining -= 1
+            }
+            return value
+        }
     }
 
     // MARK: - Helpers
@@ -182,17 +413,7 @@ enum MusicXMLExporter {
     }
 
     static func noteType(for durationBeats: Double) -> String {
-        let rounded = (durationBeats / ScoreBuilder.gridBeats).rounded() * ScoreBuilder.gridBeats
-        switch rounded {
-        case 4.0: return "whole"
-        case 3.0: return "half" // dotted half approximated without dots for MVP
-        case 2.0: return "half"
-        case 1.5: return "quarter"
-        case 1.0: return "quarter"
-        case 0.75: return "eighth"
-        case 0.5: return "eighth"
-        default: return "16th"
-        }
+        DurationSpelling.pieces(forBeats: durationBeats)[0].type
     }
 
     private static func formatNumber(_ value: Double) -> String {

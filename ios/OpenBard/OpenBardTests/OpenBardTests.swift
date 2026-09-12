@@ -572,6 +572,66 @@ struct OpenBardTests {
         #expect(!secondNotes[0].tiedToNext)
     }
 
+    @Test func musicXMLOverlappingNotesDoNotOverflowTheMeasure() throws {
+        let notes = [
+            musicNote(pitch: 48, onset: 0, duration: 4),
+            musicNote(pitch: 84, onset: 1, duration: 1),
+        ]
+        let xml = try musicXML(from: notes, tempoBpm: 60)
+        let rhythm = MusicXMLRhythm.inspect(xml)
+        #expect(rhythm.cursorEnds == [16])
+        #expect(rhythm.incompleteVoices == 0)
+        #expect(rhythm.mixedDurationChords == 0)
+        #expect(xml.contains("<step>C</step>"))
+        #expect(xml.contains("<octave>3</octave>"))
+        #expect(xml.contains("<octave>6</octave>"))
+    }
+
+    @Test func musicXMLMixedDurationChordKeepsTheLongerTone() throws {
+        let notes = [
+            musicNote(pitch: 48, onset: 0, duration: 0.5),
+            musicNote(pitch: 64, onset: 0, duration: 2.0),
+        ]
+        let xml = try musicXML(from: notes, tempoBpm: 120)
+        let rhythm = MusicXMLRhythm.inspect(xml)
+        #expect(rhythm.cursorEnds == [16])
+        #expect(rhythm.incompleteVoices == 0)
+        #expect(rhythm.mixedDurationChords == 0)
+        #expect(xml.contains("<octave>3</octave>"))
+        #expect(xml.contains("<step>E</step>"))
+    }
+
+    @Test func musicXMLGridDurationsMatchDeclaredType() throws {
+        var mismatchBeats: [Double] = []
+        var unfilledBeats: [Double] = []
+        for step in 1...16 {
+            let beats = Double(step) * 0.25
+            let notes = [musicNote(pitch: 60, onset: 0, duration: beats * 0.5)]
+            let xml = try musicXML(from: notes, tempoBpm: 120)
+            let rhythm = MusicXMLRhythm.inspect(xml)
+            if rhythm.typeMismatches != 0 {
+                mismatchBeats.append(beats)
+            }
+            if rhythm.cursorEnds != [16] || rhythm.incompleteVoices != 0 {
+                unfilledBeats.append(beats)
+            }
+        }
+        #expect(mismatchBeats == [])
+        #expect(unfilledBeats == [])
+    }
+
+    @Test func musicXMLBundledFixturesHaveValidMeasureRhythm() throws {
+        let bundle = Bundle(for: TestBundleMarker.self)
+        let isolated = try TranscriptionLoader.loadFixture(.isolatedPiano, from: bundle)!
+        let mixed = try TranscriptionLoader.loadFixture(.mixedArrangement, from: bundle)!
+        let isolatedXML = try musicXML(from: isolated.noteEvents, tempoBpm: isolated.tempoBpm)
+        let mixedXML = try musicXML(from: mixed.noteEvents, tempoBpm: mixed.tempoBpm)
+        let isolatedRhythm = MusicXMLRhythm.inspect(isolatedXML)
+        let mixedRhythm = MusicXMLRhythm.inspect(mixedXML)
+        #expect(isolatedRhythm.isValid)
+        #expect(mixedRhythm.isValid)
+    }
+
     @Test func zoomMathClampsScale() {
         #expect(ZoomMath.clamp(0) == ZoomMath.minimum)
         #expect(ZoomMath.clamp(1) == 1)
@@ -775,4 +835,194 @@ struct OpenBardTests {
         #expect(abs(NoteAudioRenderer.frequency(midiPitch: 69) - 440) < 0.01)
         #expect(NoteAudioRenderer.timelineEnd(notes: notes) == 0.5)
     }
+}
+
+private func musicNote(pitch: Int, onset: Double, duration: Double) -> NoteEvent {
+    NoteEvent(
+        pitchMidi: pitch,
+        onsetSeconds: onset,
+        durationSeconds: duration,
+        velocity: 0.8,
+        confidence: 1,
+        staffHint: .treble,
+        isLocked: true
+    )
+}
+
+private func musicXML(from notes: [NoteEvent], tempoBpm: Double?) throws -> String {
+    let data = try MusicXMLExporter.makeData(from: notes, tempoBpm: tempoBpm)
+    return String(decoding: data, as: UTF8.self)
+}
+
+private struct MusicXMLRhythm {
+    var cursorEnds: [Int]
+    var typeMismatches: Int
+    var mixedDurationChords: Int
+    var incompleteVoices: Int
+    var expectedDivisions: Int
+
+    var isValid: Bool {
+        typeMismatches == 0
+            && mixedDurationChords == 0
+            && incompleteVoices == 0
+            && cursorEnds.allSatisfy { $0 == expectedDivisions }
+    }
+
+    static func inspect(_ xml: String) -> MusicXMLRhythm {
+        let divisions = firstIntTag("divisions", in: xml) ?? MusicXMLExporter.divisionsPerQuarter
+        let expected = 4 * divisions
+        var cursorEnds: [Int] = []
+        var typeMismatches = 0
+        var mixedDurationChords = 0
+        var incompleteVoices = 0
+
+        for measure in elements(named: "measure", in: xml) {
+            var cursor = 0
+            var voiceSums: [String: Int] = [:]
+            var anchorDuration: Int?
+            var index = measure.startIndex
+            while index < measure.endIndex {
+                guard let event = nextTimedEvent(in: measure, from: index) else { break }
+                index = event.end
+                switch event.kind {
+                case .backup(let duration):
+                    cursor -= duration
+                case .forward(let duration):
+                    cursor += duration
+                case .note(let body):
+                    let duration = firstIntTag("duration", in: body) ?? 0
+                    let voice = firstStringTag("voice", in: body) ?? "1"
+                    let isChord = body.contains("<chord/>") || body.contains("<chord />")
+                    let isGrace = body.contains("<grace")
+                    let dots = dotCount(in: body)
+                    if let type = firstStringTag("type", in: body),
+                       let implied = impliedDivisions(type: type, dots: dots, divisions: divisions),
+                       implied != duration {
+                        typeMismatches += 1
+                    }
+                    if isChord {
+                        if let anchorDuration, duration != anchorDuration {
+                            mixedDurationChords += 1
+                        }
+                    } else {
+                        anchorDuration = duration
+                    }
+                    if isGrace {
+                        continue
+                    }
+                    if !isChord {
+                        cursor += duration
+                        voiceSums[voice, default: 0] += duration
+                    }
+                }
+            }
+            cursorEnds.append(cursor)
+            if voiceSums.values.contains(where: { $0 != expected }) {
+                incompleteVoices += 1
+            }
+        }
+
+        return MusicXMLRhythm(
+            cursorEnds: cursorEnds,
+            typeMismatches: typeMismatches,
+            mixedDurationChords: mixedDurationChords,
+            incompleteVoices: incompleteVoices,
+            expectedDivisions: expected
+        )
+    }
+}
+
+private struct TimedEvent {
+    enum Kind {
+        case note(String)
+        case backup(Int)
+        case forward(Int)
+    }
+
+    var kind: Kind
+    var end: String.Index
+}
+
+private func nextTimedEvent(in text: String, from index: String.Index) -> TimedEvent? {
+    let note = text.range(of: "<note", range: index..<text.endIndex)
+    let backup = text.range(of: "<backup", range: index..<text.endIndex)
+    let forward = text.range(of: "<forward", range: index..<text.endIndex)
+    let candidates: [(String, Range<String.Index>)] = [
+        note.map { ("note", $0) },
+        backup.map { ("backup", $0) },
+        forward.map { ("forward", $0) },
+    ].compactMap { $0 }
+    guard let earliest = candidates.min(by: { $0.1.lowerBound < $1.1.lowerBound }) else {
+        return nil
+    }
+    let name = earliest.0
+    let start = earliest.1.lowerBound
+    let close = "</\(name)>"
+    guard let end = text.range(of: close, range: start..<text.endIndex) else {
+        return nil
+    }
+    let body = String(text[start..<end.upperBound])
+    switch name {
+    case "note":
+        return TimedEvent(kind: .note(body), end: end.upperBound)
+    case "backup":
+        return TimedEvent(kind: .backup(firstIntTag("duration", in: body) ?? 0), end: end.upperBound)
+    case "forward":
+        return TimedEvent(kind: .forward(firstIntTag("duration", in: body) ?? 0), end: end.upperBound)
+    default:
+        return nil
+    }
+}
+
+private func elements(named name: String, in text: String) -> [String] {
+    var result: [String] = []
+    var index = text.startIndex
+    let open = "<\(name)"
+    let close = "</\(name)>"
+    while let start = text.range(of: open, range: index..<text.endIndex) {
+        guard let end = text.range(of: close, range: start.upperBound..<text.endIndex) else {
+            break
+        }
+        result.append(String(text[start.lowerBound..<end.upperBound]))
+        index = end.upperBound
+    }
+    return result
+}
+
+private func firstIntTag(_ name: String, in text: String) -> Int? {
+    firstStringTag(name, in: text).flatMap(Int.init)
+}
+
+private func firstStringTag(_ name: String, in text: String) -> String? {
+    let open = "<\(name)>"
+    let close = "</\(name)>"
+    guard let start = text.range(of: open),
+          let end = text.range(of: close, range: start.upperBound..<text.endIndex) else {
+        return nil
+    }
+    return String(text[start.upperBound..<end.lowerBound])
+}
+
+private func dotCount(in text: String) -> Int {
+    text.components(separatedBy: "<dot").count - 1
+}
+
+private func impliedDivisions(type: String, dots: Int, divisions: Int) -> Int? {
+    let baseAtFour: [String: Int] = [
+        "whole": 16,
+        "half": 8,
+        "quarter": 4,
+        "eighth": 2,
+        "16th": 1,
+    ]
+    guard let base = baseAtFour[type] else { return nil }
+    var value = base * divisions / 4
+    var add = value / 2
+    var remaining = dots
+    while remaining > 0 {
+        value += add
+        add /= 2
+        remaining -= 1
+    }
+    return value
 }
