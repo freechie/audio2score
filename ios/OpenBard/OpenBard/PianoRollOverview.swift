@@ -75,12 +75,12 @@ struct PianoRollOverview: View {
                     let x = CGFloat(timeWindow.visibleStart / content) * width
                     let w = max(CGFloat(timeWindow.visibleDuration / content) * width, 18)
                     let localX = value.startLocation.x - x
-                    let edge: CGFloat = 14
-                    if localX < edge {
+                    switch PianoRollEdit.edgeHit(localX: localX, width: w, edgeWidth: 14) {
+                    case .left:
                         dragKind = .resizeLeft
-                    } else if localX > w - edge {
+                    case .right:
                         dragKind = .resizeRight
-                    } else {
+                    case .body:
                         dragKind = .move
                     }
                     dragStartWindow = timeWindow

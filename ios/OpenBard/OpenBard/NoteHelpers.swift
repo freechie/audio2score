@@ -317,13 +317,15 @@ enum PianoRollEdit {
         case body
     }
 
-    static func edgeHit(frame: CGRect, point: CGPoint, edgeWidth: CGFloat = 18) -> EdgeHit {
-        let half = min(edgeWidth, frame.width / 2)
-        let left = CGRect(x: frame.minX, y: frame.minY, width: half, height: frame.height)
-        let right = CGRect(x: frame.maxX - half, y: frame.minY, width: half, height: frame.height)
-        if right.contains(point) { return .right }
-        if left.contains(point) { return .left }
+    static func edgeHit(localX: CGFloat, width: CGFloat, edgeWidth: CGFloat = 18) -> EdgeHit {
+        let edge = min(edgeWidth, width / 4)
+        if localX >= width - edge { return .right }
+        if localX < edge { return .left }
         return .body
+    }
+
+    static func edgeHit(frame: CGRect, point: CGPoint, edgeWidth: CGFloat = 18) -> EdgeHit {
+        edgeHit(localX: point.x - frame.minX, width: frame.width, edgeWidth: edgeWidth)
     }
 
     static func isRightEdgeHit(frame: CGRect, point: CGPoint, edgeWidth: CGFloat = 18) -> Bool {

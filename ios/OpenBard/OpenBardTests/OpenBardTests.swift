@@ -349,6 +349,9 @@ struct OpenBardTests {
         #expect(PianoRollEdit.edgeHit(frame: hotspot, point: CGPoint(x: 9, y: 16), edgeWidth: 14) == .body)
         #expect(PianoRollEdit.edgeHit(frame: hotspot, point: CGPoint(x: 0, y: 16), edgeWidth: 14) == .left)
         #expect(PianoRollEdit.edgeHit(frame: hotspot, point: CGPoint(x: 17.9, y: 16), edgeWidth: 14) == .right)
+        #expect(PianoRollEdit.edgeHit(localX: 9, width: 18, edgeWidth: 14) == .body)
+        #expect(PianoRollEdit.edgeHit(localX: 0, width: 18, edgeWidth: 14) == .left)
+        #expect(PianoRollEdit.edgeHit(localX: 17.9, width: 18, edgeWidth: 14) == .right)
     }
     
     @Test func findsMergeCandidate() {
